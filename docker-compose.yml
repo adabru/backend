@@ -16,10 +16,13 @@ services:
       APP_FRONTEND_URL: ${APP_FRONTEND_URL}
       BODY_PARSER_JSON_LIMIT: ${BODY_PARSER_JSON_LIMIT}
       ELASTIC_URL: ${ELASTIC_URL}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
     ports:
       - "${APP_PORT}:3000"
     expose:
       - "${APP_PORT}"
+    extra_hosts:
+      - host.docker.internal:host-gateway
     depends_on:
       postgres:
         condition: service_healthy

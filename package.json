@@ -52,6 +52,7 @@
     "ldapts": "^7.1.0",
     "looks-same": "^9.0.0",
     "odiff-bin": "^2.6.1",
+    "ollama": "^0.6.3",
     "passport": "^0.6.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
@@ -63,7 +64,8 @@
     "rimraf": "^5.0.1",
     "rxjs": "^7.8.2",
     "swagger-ui-express": "^4.6.3",
-    "uuid-apikey": "^1.5.3"
+    "uuid-apikey": "^1.5.3",
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@darraghor/eslint-plugin-nestjs-typed": "^6.9.3",

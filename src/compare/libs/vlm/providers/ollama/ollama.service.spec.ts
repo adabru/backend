@@ -1,6 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { OllamaService } from './ollama.service';
+import { OllamaVlmConfig } from '../../vlm.types';
+
+jest.mock('zod/v3', () => {
+  const actualZod = jest.requireActual('zod');
+  return actualZod;
+});
 
 const mockChat = jest.fn();
 const mockList = jest.fn();
@@ -17,18 +23,20 @@ jest.mock('ollama', () => {
 
 describe('OllamaService', () => {
   let service: OllamaService;
+  const mockConfigService = {
+    getOrThrow: jest.fn().mockReturnValue('http://localhost:11434'),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockConfigService.getOrThrow.mockReturnValue('http://localhost:11434');
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         OllamaService,
         {
           provide: ConfigService,
-          useValue: {
-            getOrThrow: jest.fn().mockReturnValue('http://localhost:11434'),
-          },
+          useValue: mockConfigService,
         },
       ],
     }).compile();
@@ -36,123 +44,85 @@ describe('OllamaService', () => {
     service = module.get<OllamaService>(OllamaService);
   });
 
-  describe('generate', () => {
-    it('should call Ollama SDK with correct parameters for Uint8Array', async () => {
-      const mockResponse = {
-        model: 'llava',
-        created_at: new Date(),
-        message: { content: 'YES', role: 'assistant' },
-        done: true,
-        done_reason: 'stop',
-        total_duration: 1000,
-        load_duration: 100,
-        prompt_eval_count: 10,
-        prompt_eval_duration: 200,
-        eval_count: 5,
-        eval_duration: 300,
-      };
+  const createConfig = (overrides?: Partial<OllamaVlmConfig>): OllamaVlmConfig => ({
+    provider: 'ollama',
+    model: 'llava',
+    prompt: 'Test prompt',
+    temperature: 0.1,
+    ...overrides,
+  });
+
+  const createMockResponse = (content: string, thinking?: string) => ({
+    model: 'llava',
+    created_at: new Date(),
+    message: { content, thinking, role: 'assistant' as const },
+    done: true,
+    done_reason: 'stop' as const,
+    total_duration: 1000,
+    load_duration: 100,
+    prompt_eval_count: 10,
+    prompt_eval_duration: 200,
+    eval_count: 5,
+    eval_duration: 300,
+  });
+
+  describe('generate (VlmProvider interface)', () => {
+    it('should call Ollama SDK with correct parameters and return VlmProviderResponse', async () => {
+      const testBytes = new Uint8Array([1, 2, 3, 4]);
+      const config = createConfig();
+      const mockResponse = createMockResponse('{"identical": true, "description": "No differences"}');
       mockChat.mockResolvedValue(mockResponse);
 
-      const testBytes = new Uint8Array([1, 2, 3, 4]);
-      const result = await service.generate({
-        model: 'llava',
-        messages: [
-          {
-            role: 'user',
-            content: 'Test prompt',
-            images: [testBytes],
-          },
-        ],
-      });
+      const result = await service.generate(config, [testBytes]);
 
       expect(mockChat).toHaveBeenCalledWith({
-        model: 'llava',
+        model: config.model,
         messages: [
           {
             role: 'user',
-            content: 'Test prompt',
+            content: config.prompt,
             images: [testBytes],
           },
         ],
         stream: false,
-        format: undefined,
-        options: undefined,
+        format: expect.any(Object),
+        options: {
+          temperature: config.temperature,
+        },
       });
-      expect(result.message.content).toBe('YES');
-      expect(result.done).toBe(true);
+      expect(result.content).toBe('{"identical": true, "description": "No differences"}');
+      expect(result.thinking).toBeUndefined();
     });
 
-    it('should call Ollama SDK with correct parameters for base64 strings', async () => {
-      const mockResponse = {
-        model: 'llava',
-        created_at: new Date(),
-        message: { content: 'YES', role: 'assistant' },
-        done: true,
-        done_reason: 'stop',
-        total_duration: 1000,
-        load_duration: 100,
-        prompt_eval_count: 10,
-        prompt_eval_duration: 200,
-        eval_count: 5,
-        eval_duration: 300,
-      };
+    it('should handle thinking field in response', async () => {
+      const config = createConfig();
+      const mockResponse = createMockResponse(
+        '{"identical": false}',
+        '{"identical": true, "description": "Thinking result"}'
+      );
       mockChat.mockResolvedValue(mockResponse);
 
-      const longBase64 =
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-      const result = await service.generate({
-        model: 'llava',
-        messages: [
-          {
-            role: 'user',
-            content: 'Test prompt',
-            images: [longBase64],
-          },
-        ],
-      });
+      const result = await service.generate(config, []);
 
-      expect(mockChat).toHaveBeenCalledWith({
-        model: 'llava',
-        messages: [
-          {
-            role: 'user',
-            content: 'Test prompt',
-            images: [longBase64],
-          },
-        ],
-        stream: false,
-        format: undefined,
-        options: undefined,
-      });
-      expect(result.message.content).toBe('YES');
-      expect(result.done).toBe(true);
+      expect(result.content).toBe('{"identical": false}');
+      expect(result.thinking).toBe('{"identical": true, "description": "Thinking result"}');
     });
 
     it('should throw error when SDK call fails', async () => {
+      const config = createConfig();
       mockChat.mockRejectedValue(new Error('Connection refused'));
-
-      await expect(
-        service.generate({
-          model: 'llava',
-          messages: [{ role: 'user', content: 'Test' }],
-        })
-      ).rejects.toThrow('Connection refused');
+      await expect(service.generate(config, [])).rejects.toThrow('Connection refused');
     });
 
     it('should throw error when OLLAMA_BASE_URL is not configured', async () => {
-      const mockConfigService = {
+      const config = createConfig();
+      const errorConfigService = {
         getOrThrow: jest.fn().mockImplementation(() => {
           throw new Error('Configuration key "OLLAMA_BASE_URL" does not exist');
         }),
-      } as any;
-      const newService = new OllamaService(mockConfigService);
-
-      await expect(
-        newService.generate({
-          model: 'llava',
-          messages: [{ role: 'user', content: 'Test' }],
-        })
-      ).rejects.toThrow('OLLAMA_BASE_URL');
+      };
+      const newService = new OllamaService(errorConfigService as any);
+      await expect(newService.generate(config, [])).rejects.toThrow('OLLAMA_BASE_URL');
     });
   });
 

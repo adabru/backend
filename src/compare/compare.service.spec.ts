@@ -6,10 +6,16 @@ import { LookSameService } from './libs/looks-same/looks-same.service';
 import { OdiffService } from './libs/odiff/odiff.service';
 import { PixelmatchService } from './libs/pixelmatch/pixelmatch.service';
 import { VlmService } from './libs/vlm/vlm.service';
-import { OllamaService } from './libs/vlm/ollama.service';
+import { OllamaService } from './libs/vlm/providers/ollama/ollama.service';
+import { GeminiService } from './libs/vlm/providers/gemini/gemini.service';
 import { StaticModule } from '../static/static.module';
 import { ImageComparison } from '@prisma/client';
 import * as utils from '../static/utils';
+
+jest.mock('zod/v3', () => {
+  const actualZod = jest.requireActual('zod');
+  return actualZod;
+});
 
 describe('CompareService', () => {
   let service: CompareService;
@@ -26,6 +32,7 @@ describe('CompareService', () => {
         LookSameService,
         VlmService,
         OllamaService,
+        GeminiService,
         PrismaService,
         {
           provide: ConfigService,
